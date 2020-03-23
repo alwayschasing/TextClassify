@@ -7,6 +7,7 @@ TMP_DIR=/search/odin/zhuguangnan/bert_test/tmpdata
 DATA_DIR=/search/odin/liruihong/tts/data
 word2vec="/search/odin/liruihong/tts/multi_attn_model/config_data/70000-small.txt"
 config_file="/search/odin/liruihong/tts/multi_attn_model/config_data/classify_config.json"
+stop_words_file="/search/odin/liruihong/tts/multi_attn_model/config_data/cn_stopwords.txt"
 
 test_data=$DATA_DIR/eval_data/test_4label_review_v2.tsv 
 #test_data=$DATA_DIR/eval_data/test100_bertinput
@@ -22,6 +23,7 @@ python run_textclassify.py \
   --do_predict=false \
   --data_path=$test_data \
   --word2vec_file=$word2vec \
+  --stop_words_file=$stop_words_file \
   --config_file=$config_file \
   --max_seq_length=128 \
   --train_batch_size=32 \

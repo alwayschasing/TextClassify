@@ -14,7 +14,9 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("input_file", None)
 flags.DEFINE_string("output_dir", None)
+flags.DEFINE_string("data_path", None)
 flags.DEFINE_string("word2vec_file", None)
+flags.DEFINE_string("stop_words_file", None)
 flags.DEFINE_string("init_checkpoint", None)
 flags.DEFINE_integer("max_seq_length", 128)
 flags.DEFINE_string("vocab_file", None)
@@ -31,6 +33,7 @@ flags.DEFINE_integer("num_train_steps", 10)
 flags.DEFINE_integer("num_warmup_steps", 10)
 flags.DEFINE_integer("save_checkpoint_steps", 1000)
 flags.DEFINE_string("word2vec_file",None)
+flags.DEFINE_string("config_file", None)
 
 
 class InputExample(object):
@@ -68,15 +71,15 @@ class InputFeatures(object):
 
 
 class DataProcessor(object):
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self, data_path):
         """Gets a collection of `InputExample`s for the train set."""
         raise NotImplementedError()
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, data_path):
         """Gets a collection of `InputExample`s for the dev set."""
         raise NotImplementedError()
 
-    def get_test_examples(self, data_dir):
+    def get_test_examples(self, data_path):
         """Gets a collection of `InputExample`s for prediction."""
         raise NotImplementedError()
 
@@ -96,21 +99,21 @@ class DataProcessor(object):
 
 
 class TtsProcessor(DataProcessor):
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self, data_path):
         """See base class."""
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+            self._read_tsv(data_path), "train")
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, data_path):
         """See base class."""
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev_matched.tsv")),
+            self._read_tsv(data_path),
             "dev_matched")
 
-    def get_test_examples(self, data_dir):
+    def get_test_examples(self, data_path):
         """See base class."""
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "test_matched.tsv")), "test")
+            self._read_tsv(data_path), "test")
 
     def get_labels(self):
         """See base class."""
@@ -123,12 +126,17 @@ class TtsProcessor(DataProcessor):
             if i == 0:
                 continue
             guid = "%s-%s" % (set_type, tokenization.convert_to_unicode(line[0]))
-            text_a = tokenization.convert_to_unicode(line[8])
-            text_b = tokenization.convert_to_unicode(line[9])
-            if set_type == "test":
-                label = "contradiction"
+            text_a = tokenization.convert_to_unicode(line[1])
+
+            if len(line) > 2:
+                text_b = tokenization.convert_to_unicode(line[2])
             else:
-                label = tokenization.convert_to_unicode(line[-1])
+                text_b = None
+
+            if set_type == "test":
+                label = "1"
+            else:
+                label = tokenization.convert_to_unicode(line[0])
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
@@ -499,8 +507,8 @@ def main(_):
     processor = processors[task_name]()
     label_list = processor.get_labels()
 
-    tokenizer = tokenization.WordTokenizer(
-        vocab_file=FLAGS.vocab_file, w2v_file=FLAGS.w2v_file, do_lower_case=FLAGS.do_lower_case)
+    tokenizer = tokenization.Tokenizer(
+        word2vec_file=FLAGS.w2v_file, stop_words_file=FLAGS.stop_words_file)
 
     embedding_table = load_embedding_table(FLAGS.w2v_file)
     assert(len(tokenizer.vocab) == embedding_table.size)
@@ -509,7 +517,7 @@ def main(_):
     num_train_steps = None
     num_warmup_steps = None
     if FLAGS.do_train:
-        train_examples = processor.get_train_examples(FLAGS.data_dir)
+        train_examples = processor.get_train_examples(FLAGS.data_path)
         num_train_steps = int(
             len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
         num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
@@ -556,7 +564,7 @@ def main(_):
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
     if FLAGS.do_eval:
-        eval_examples = processor.get_dev_examples(FLAGS.data_dir)
+        eval_examples = processor.get_dev_examples(FLAGS.data_path)
         num_actual_eval_examples = len(eval_examples)
         eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
         file_based_convert_examples_to_features(
@@ -581,7 +589,7 @@ def main(_):
                 writer.write("%s = %s\n" % (key, str(result[key])))
 
     if FLAGS.do_predict:
-        predict_examples = processor.get_test_examples(FLAGS.data_dir)
+        predict_examples = processor.get_test_examples(FLAGS.data_path)
         num_actual_predict_examples = len(predict_examples)
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
         predict_input_fn = file_based_input_fn_builder(
@@ -608,10 +616,9 @@ def main(_):
 
 
 if __name__ == "__main__":
-    flags.mark_flag_as_required("data_dir")
+    flags.mark_flag_as_required("data_path")
     flags.mark_flag_as_required("task_name")
-    flags.mark_flag_as_required("vocab_file")
-    flags.mark_flag_as_required("classify_config_file")
+    flags.mark_flag_as_required("config_file")
     flags.mark_flag_as_required("output_dir")
     flags.mark_flag_as_required("word2vec_file")
     tf.app.run()

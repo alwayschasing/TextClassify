@@ -26,7 +26,7 @@ def convert_to_unicode(text):
         raise ValueError("Not running on Python2 or Python 3?")
 
 
-def load_word_vocab(word_vocab_file, w2v=False):
+def load_word_vocab(word_vocab_file):
     vocab = collections.OrderedDict()
     index = 0
 
@@ -36,13 +36,10 @@ def load_word_vocab(word_vocab_file, w2v=False):
             token = convert_to_unicode(reader.readline())
             if not token:
                 break
-            if w2v == False:
-                token = token.strip()
-            else:
-                if skip_head:
-                    skip_head = False
-                    continue
-                token = token.strip().split(' ')[0]
+            if skip_head:
+                skip_head = False
+                continue
+            token = token.strip().split(' ')[0]
             vocab[token] = index
             index += 1
     return vocab
@@ -70,13 +67,13 @@ def convert_by_vocab(vocab, items):
 
 
 class Tokenizer(object):
-    def __init__(self, word_vocab_file, word2vec_file, stop_words_file):
-        if word2vec_file is None:
-            self.vocab = load_word_vocab(word_vocab_file)
-        else:
-            self.vocab = load_word_vocab(word2vec_file,w2v=True)
+    def __init__(self, word2vec_file, stop_words_file=None):
+        self.vocab = load_word_vocab(word2vec_file)
         self.inv_vocab = {v: k for k, v in self.vocab.items()}
-        self.stop_words = load_stop_words(stop_words_file)
+        if stop_words_file is None:
+            self.stop_words = set()
+        else:
+            self.stop_words = load_stop_words(stop_words_file)
 
     def tokenize(self,text):
         split_tokens = []
