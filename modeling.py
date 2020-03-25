@@ -5,11 +5,13 @@ import copy
 import six
 import numpy as np
 import json
+import math
 
 
 class ModelConfig(object):
     def __init__(self,
                  vocab_size,
+                 vocab_vec_size=200,
                  hidden_size=768,
                  num_hidden_layers=12,
                  num_attention_heads=12,
@@ -18,10 +20,13 @@ class ModelConfig(object):
                  hidden_dropout_prob=0.1,
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
-                 type_vocab_size=16,
+                 use_token_type=True,
+                 use_position_embeddings=True,
+                 type_vocab_size=2,
                  initializer_range=0.02):
 
         self.vocab_size = vocab_size
+        self.vocab_vec_size = vocab_vec_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
@@ -30,6 +35,8 @@ class ModelConfig(object):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.max_position_embeddings = max_position_embeddings
+        self.use_token_type = use_token_type
+        self.use_positioin_embeddings = use_position_embeddings
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
 
@@ -214,13 +221,14 @@ class TextClassify(object):
                  embedding_table,
                  input_mask=None,
                  token_type_ids=None,
+                 use_one_hot_embeddings=False,
                  scope=None):
 
         config = copy.deepcopy(config)
         if not is_training:
             config.hidden_dropout_prob = 0.0
 
-        input_shape = get_shape_list(input_ids, expected_rank=3)
+        input_shape = get_shape_list(input_ids, expected_rank=2)
         batch_size = input_shape[0]
         seq_length = input_shape[1]
 
@@ -235,16 +243,17 @@ class TextClassify(object):
                 self.embedding_table = embedding_table
                 self.embedding_output = tf.nn.embedding_lookup(embedding_table, input_ids)
 
-                if config.use_position_embeddings:
-                    self.embedding_output = embedding_postprocessor(input_tensor=self.embedding_output,
-                                                                    token_type_ids=token_type_ids,
-                                                                    token_type_vocab_size=config.type_vocab_size,
-                                                                    token_type_embedding_name="token_type_embeddings",
-                                                                    use_position_embeddings=True,
-                                                                    position_embedding_name="position_embeddings",
-                                                                    initializer_range=config.initializer_range,
-                                                                    max_position_embeddings=config.max_position_embeddings,
-                                                                    dropout_prob=config.hidden_dropout_prob)
+                #if config.use_position_embeddings:
+                self.embedding_output = embedding_postprocessor(input_tensor=self.embedding_output,
+                                                                use_token_type=config.use_token_type,
+                                                                token_type_ids=token_type_ids,
+                                                                token_type_vocab_size=config.type_vocab_size,
+                                                                token_type_embedding_name="token_type_embeddings",
+                                                                use_position_embeddings=config.use_position_embeddings,
+                                                                position_embedding_name="position_embeddings",
+                                                                initializer_range=config.initializer_range,
+                                                                max_position_embeddings=config.max_position_embeddings,
+                                                                dropout_prob=config.hidden_dropout_prob)
 
             # embedding_output : [batch_size, seq, embedding_size]
             with tf.variable_scope("encoder"):
@@ -273,6 +282,18 @@ class TextClassify(object):
                 with tf.variable_scope("pooler"):
                     # [batch_size, seq_length, hidden_size]
                     self.pooled_output = tf.reduce_sum(self.sequence_output,axis=1)  # [batch_size,hidden_size]
+
+    def get_pooled_output(self):
+        return self.pooled_output
+
+    def get_sequence_output(self):
+        return self.sequence_output
+    
+    def get_embedding_output(self):
+        return self.embedding_output
+    
+    def get_embedding_table(self):
+        return self.embedding_table
 
 
 def attention_layer(from_tensor,

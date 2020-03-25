@@ -26,6 +26,25 @@ def convert_to_unicode(text):
         raise ValueError("Not running on Python2 or Python 3?")
 
 
+def printable_text(text):
+    if six.PY3:
+        if isinstance(text, str):
+            return text
+        elif isinstance(text, bytes):
+            return text.decode("utf-8", "ignore")
+        else:
+            raise ValueError("Unsupported string type:%s"%(type(text)))
+    elif six.PY2:
+        if isinstance(text, str):
+            return text
+        elif isinstance(text, unicode):
+            return text.encode("utf-8")
+        else:
+            raise ValueError("Unsupported string type:%s"%(type(text)))
+    else:
+        raise ValueError("Not running on Python2 or Python3")
+
+
 def load_word_vocab(word_vocab_file):
     vocab = collections.OrderedDict()
     index = 0
@@ -62,7 +81,8 @@ def convert_by_vocab(vocab, items):
     """Converts a sequence of [tokens|ids] using the vocab."""
     output = []
     for item in items:
-        output.append(vocab[item])
+        if item in vocab:
+            output.append(vocab[item])
     return output
 
 
@@ -74,6 +94,7 @@ class Tokenizer(object):
             self.stop_words = set()
         else:
             self.stop_words = load_stop_words(stop_words_file)
+        self.vocab_size = len(self.vocab)
 
     def tokenize(self,text):
         split_tokens = []

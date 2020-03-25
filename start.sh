@@ -5,13 +5,16 @@ BERT_ZH_DIR=/search/odin/zhuguangnan/bert_test/bert_data/chinese_L-12_H-768_A-12
 TMP_DIR=/search/odin/zhuguangnan/bert_test/tmpdata
 
 DATA_DIR=/search/odin/liruihong/tts/data
-word2vec="/search/odin/liruihong/tts/multi_attn_model/config_data/70000-small.txt"
+#word2vec="/search/odin/liruihong/tts/multi_attn_model/config_data/tencent_ChineseEmbedding/Tencent_AILab_ChineseEmbedding.txt"
+word2vec="/search/odin/liruihong/tts/multi_attn_model/config_data/100000-small.txt"
 config_file="/search/odin/liruihong/tts/multi_attn_model/config_data/classify_config.json"
 stop_words_file="/search/odin/liruihong/tts/multi_attn_model/config_data/cn_stopwords.txt"
 
-test_data=$DATA_DIR/eval_data/test_4label_review_v2.tsv 
-#test_data=$DATA_DIR/eval_data/test100_bertinput
-train_data=$DATA_DIR/train_data/annotate_augment2_train
+
+output_dir="/search/odin/liruihong/tts/bert_output/wordvec_attn/annotate_part"
+#test_data=$DATA_DIR/eval_data/test_4label_review_v2.tsv 
+test_data=$DATA_DIR/eval_data/test100_bertinput
+train_data=$DATA_DIR/train_data/annotate_train_part
 dev_data=$DATA_DIR/train_data/annotate_data_dev
 #init_dir=$TMP_DIR/zh_topic_sub1kw_pretrain_output/model.ckpt-50 
 #--init_checkpoint=$init_dir \
@@ -21,7 +24,9 @@ python run_textclassify.py \
   --do_train=true \
   --do_eval=false \
   --do_predict=false \
-  --data_path=$test_data \
+  --train_data=$train_data \
+  --eval_data=$dev_data \
+  --pred_data=$test_data \
   --word2vec_file=$word2vec \
   --stop_words_file=$stop_words_file \
   --config_file=$config_file \
@@ -29,4 +34,4 @@ python run_textclassify.py \
   --train_batch_size=32 \
   --learning_rate=2e-5 \
   --num_train_epochs=6 \
-  --output_dir=$OUTPUT_DIR
+  --output_dir=$output_dir

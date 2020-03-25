@@ -8,32 +8,39 @@ import numpy as np
 import modeling
 import tokenization
 import optimization
+import logging
 
 flags = tf.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("input_file", None)
-flags.DEFINE_string("output_dir", None)
-flags.DEFINE_string("data_path", None)
-flags.DEFINE_string("word2vec_file", None)
-flags.DEFINE_string("stop_words_file", None)
-flags.DEFINE_string("init_checkpoint", None)
-flags.DEFINE_integer("max_seq_length", 128)
-flags.DEFINE_string("vocab_file", None)
-flags.DEFINE_integer("word_vec_size", 200)
-flags.DEFINE_bool("embedding_table_trainable", False)
-flags.DEFINE_bool("do_train", False)
-flags.DEFINE_bool("do_eval", False)
-flags.DEFINE_bool("do_pred", False)
-flags.DEFINE_integer("train_batch_size", 32)
-flags.DEFINE_integer("eval_batch_size", 32)
-flags.DEFINE_integer("pred_batch_size", 32)
-flags.DEFINE_float("learning_rate", 5e-5)
-flags.DEFINE_integer("num_train_steps", 10)
-flags.DEFINE_integer("num_warmup_steps", 10)
-flags.DEFINE_integer("save_checkpoint_steps", 1000)
-flags.DEFINE_string("word2vec_file",None)
-flags.DEFINE_string("config_file", None)
+flags.DEFINE_string("task_name", None, "task_name")
+flags.DEFINE_string("input_file", None, "input_file")
+flags.DEFINE_string("output_dir", None, "output_dir")
+flags.DEFINE_string("data_path", None, "data_path")
+flags.DEFINE_string("word2vec_file", None, "word2vec_file")
+flags.DEFINE_string("stop_words_file", None, "stop_words_file")
+flags.DEFINE_string("init_checkpoint", None, "init_checkpoint")
+flags.DEFINE_integer("max_seq_length", 128, "max_seq_length")
+flags.DEFINE_string("config_file", None, "config_file")
+flags.DEFINE_integer("word_vec_size", 200, "word_vec_size")
+flags.DEFINE_bool("embedding_table_trainable", False, "embedding_table_trainable")
+flags.DEFINE_bool("do_train", False, "do_train")
+flags.DEFINE_bool("do_eval", False, "do_eval")
+flags.DEFINE_bool("do_predict", False, "do_predict")
+flags.DEFINE_integer("batch_size", 32, "batch_size")
+flags.DEFINE_integer("train_batch_size", 32, "train_batch_size")
+flags.DEFINE_integer("eval_batch_size", 32, "eval_batch_size")
+flags.DEFINE_integer("predict_batch_size", 32, "predict_batch_size")
+flags.DEFINE_float("learning_rate", 5e-5, "learning_rate")
+flags.DEFINE_integer("num_train_steps", 10, "num_train_steps")
+flags.DEFINE_integer("num_train_epochs", 10, "num_train_steps")
+flags.DEFINE_integer("num_warmup_steps", 10, "num_warmup_steps")
+flags.DEFINE_float("warmup_proportion", 0.1, "warmup_proportion")
+flags.DEFINE_integer("save_checkpoint_steps", 1000, "save_checkpoint_steps")
+flags.DEFINE_string("train_data",None,"train_data")
+flags.DEFINE_string("eval_data",None,"eval_data")
+flags.DEFINE_string("pred_data",None,"pred_data")
+
 
 
 class InputExample(object):
@@ -204,17 +211,24 @@ def convert_single_example(ex_index, example, label_list, max_seq_length,
             tokens_a = tokens_a[0: max_seq_length]
 
     tokens = []
-    segment_ids = []
+    #segment_ids = []
     for token in tokens_a:
         tokens.append(token)
-        segment_ids.append(0)
+    #    #segment_ids.append(0)
 
     if tokens_b:
         for token in tokens_b:
             tokens.append(token)
-            segment_ids.append(1)
+    #        #segment_ids.append(1)
 
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
+    input_ids = tokenizer.convert_tokens_to_ids(tokens_a)
+    segment_ids = [0]*len(input_ids)
+    if tokens_b:
+        input_ids_b = tokenizer.convert_tokens_to_ids(tokens_b)
+        segment_ids_b = [1]*len(input_ids_b)
+        input_ids += input_ids_b
+        segment_ids += segment_ids_b
+    # input_ids = tokenizer.convert_tokens_to_ids(tokens)
     # input_ids = tokens
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
@@ -328,6 +342,7 @@ def create_model(model_config,
                  is_training,
                  input_ids,
                  input_mask,
+                 segment_ids,
                  labels,
                  num_labels,
                  embedding_table=None,
@@ -339,7 +354,7 @@ def create_model(model_config,
         input_ids=input_ids,
         embedding_table=embedding_table,
         input_mask=input_mask,
-        embedding_table_trainable=embedding_table_trainable,
+        token_type_ids=segment_ids,
         use_one_hot_embeddings=use_one_hot_embeddings)
 
     # If you want to use the token-level output, use model.get_sequence_output()
@@ -441,22 +456,25 @@ def model_fn_builder(model_config,
                 scaffold=scaffold)
         elif mode == tf.estimator.ModeKeys.EVAL:
 
-            def metric_fn(per_example_loss, label_ids, logits):
-                predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
-                accuracy = tf.metrics.accuracy(
-                    labels=label_ids, predictions=predictions)
-                loss = tf.metrics.mean(values=per_example_loss)
-                return {
-                    "eval_accuracy": accuracy,
-                    "eval_loss": loss,
-                }
+            #def metric_fn(per_example_loss, label_ids, logits):
+            #    predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
+            #    accuracy = tf.metrics.accuracy(
+            #        labels=label_ids, predictions=predictions)
+            #    loss = tf.metrics.mean(values=per_example_loss)
+            #    return {
+            #        "eval_accuracy": accuracy,
+            #        "eval_loss": loss,
+            #    }
 
-            eval_metrics = (metric_fn,
-                            [per_example_loss, label_ids, logits])
+            #eval_metrics = (metric_fn,
+            #                [per_example_loss, label_ids, logits])
+            predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
+            eval_accuracy = tf.metrics.accuracy(labels=label_ids, predictions=predictions)
+            eval_loss = tf.metrics.mean(values=per_example_loss)
             output_spec = tf.estimator.EstimatorSpec(
                 mode=mode,
                 loss=total_loss,
-                eval_metrics=eval_metrics,
+                eval_metric_ops={"eval_accuracy":eval_accuracy, "eval_loss":eval_loss},
                 scaffold=scaffold)
         else:
             output_spec = tf.estimator.EstimatorSpec(
@@ -473,8 +491,9 @@ def load_embedding_table(embedding_table_file):
     vec_table = []
     with open(embedding_table_file) as fp:
         lines = fp.readlines()
-        head = lines[0]
-        for line in range(1,len(lines)):
+        for i,line in enumerate(lines):
+            if i == 0:
+                continue
             items = line.rstrip().split(' ')
             word = items[0]
             vec = items[1:]
@@ -492,7 +511,7 @@ def main(_):
         raise ValueError(
             "At least one of `do_train`, `do_eval` or `do_predict' must be True.")
 
-    model_config = modeling.ModelConfig.from_json_file(FLAGS.model_config_file)
+    model_config = modeling.ModelConfig.from_json_file(FLAGS.config_file)
     if FLAGS.max_seq_length > model_config.max_position_embeddings:
         raise ValueError(
             "Cannot use sequence length %d because the BERT model "
@@ -508,16 +527,18 @@ def main(_):
     label_list = processor.get_labels()
 
     tokenizer = tokenization.Tokenizer(
-        word2vec_file=FLAGS.w2v_file, stop_words_file=FLAGS.stop_words_file)
+        word2vec_file=FLAGS.word2vec_file, stop_words_file=FLAGS.stop_words_file)
+    assert(model_config.vocab_size == tokenizer.vocab_size)
 
-    embedding_table = load_embedding_table(FLAGS.w2v_file)
-    assert(len(tokenizer.vocab) == embedding_table.size)
+    embedding_table = load_embedding_table(FLAGS.word2vec_file)
+    assert(len(tokenizer.vocab) == embedding_table.shape[0])
 
-    train_examples = processor.get_train_examples(FLAGS.train_data)
+    #train_examples = processor.get_train_examples(FLAGS.train_data)
+    train_examples = None
     num_train_steps = None
     num_warmup_steps = None
     if FLAGS.do_train:
-        train_examples = processor.get_train_examples(FLAGS.data_path)
+        train_examples = processor.get_train_examples(FLAGS.train_data)
         num_train_steps = int(
             len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
         num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
@@ -540,12 +561,13 @@ def main(_):
         embedding_table_trainable=FLAGS.embedding_table_trainable,
         use_one_hot_embeddings=False)
 
+    params = {
+        "batch_size":FLAGS.batch_size,
+    }
     estimator = tf.estimator.Estimator(
         model_fn=model_fn,
         config=run_config,
-        train_batch_size=FLAGS.train_batch_size,
-        eval_batch_size=FLAGS.eval_batch_size,
-        predict_batch_size=FLAGS.predict_batch_size)
+        params=params)
 
     if FLAGS.do_train:
         train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
@@ -564,14 +586,14 @@ def main(_):
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
     if FLAGS.do_eval:
-        eval_examples = processor.get_dev_examples(FLAGS.data_path)
+        eval_examples = processor.get_dev_examples(FLAGS.eval_data)
         num_actual_eval_examples = len(eval_examples)
         eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
         file_based_convert_examples_to_features(
             eval_examples, label_list, FLAGS.max_seq_length, tokenizer, eval_file)
 
         tf.logging.info("***** Running evaluation *****")
-        tf.logging.info(" Num examples = ", num_actual_eval_examples)
+        tf.logging.info(" Num examples = %d", num_actual_eval_examples)
         tf.logging.info(" Batch size = %d", FLAGS.eval_batch_size)
 
         eval_input_fn = file_based_input_fn_builder(
@@ -580,6 +602,7 @@ def main(_):
             is_training=False,
             drop_remainder=False)
 
+        eval_steps = None
         result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
         output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
         with tf.gfile.GFile(output_eval_file, "w") as writer:
@@ -589,9 +612,16 @@ def main(_):
                 writer.write("%s = %s\n" % (key, str(result[key])))
 
     if FLAGS.do_predict:
-        predict_examples = processor.get_test_examples(FLAGS.data_path)
+        predict_examples = processor.get_test_examples(FLAGS.pred_data)
         num_actual_predict_examples = len(predict_examples)
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
+        file_based_convert_examples_to_features(
+            predict_examples, label_list, FLAGS.max_seq_length, tokenizer, predict_file)
+
+        tf.logging.info("***** Running prediction*****")
+        tf.logging.info("  Num examples = %d ", num_actual_predict_examples)
+        tf.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+
         predict_input_fn = file_based_input_fn_builder(
             input_file=predict_file,
             seq_length=FLAGS.max_seq_length,
@@ -612,11 +642,13 @@ def main(_):
                     for class_probability in probabilities) + "\n"
                 writer.write(output_line)
                 num_written_lines += 1
+        print("num_writen_lines:%d,num_actual_predict_examples:%d"%(num_written_lines, num_actual_predict_examples))
         assert num_written_lines == num_actual_predict_examples
 
 
 if __name__ == "__main__":
-    flags.mark_flag_as_required("data_path")
+    logging.basicConfig(level=logging.INFO,format="[%(asctime)s-%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     flags.mark_flag_as_required("task_name")
     flags.mark_flag_as_required("config_file")
     flags.mark_flag_as_required("output_dir")
