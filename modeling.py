@@ -6,6 +6,8 @@ import six
 import numpy as np
 import json
 import math
+import re
+import collections
 
 
 class ModelConfig(object):
@@ -233,17 +235,20 @@ class TextClassify(object):
         seq_length = input_shape[1]
 
         if input_mask is None:
-            input_mask = tf.ones(shape=[batch_size, seq_length], dtype=tf.int32)
+            input_mask = tf.ones(
+                shape=[batch_size, seq_length], dtype=tf.int32)
 
         if token_type_ids is None:
-            token_type_ids = tf.zeros(shape=[batch_size, seq_length], dtype=tf.int32)
+            token_type_ids = tf.zeros(
+                shape=[batch_size, seq_length], dtype=tf.int32)
 
         with tf.variable_scope(scope, default_name="TextClassify"):
             with tf.variable_scope("embeddings"):
                 self.embedding_table = embedding_table
-                self.embedding_output = tf.nn.embedding_lookup(embedding_table, input_ids)
+                self.embedding_output = tf.nn.embedding_lookup(
+                    embedding_table, input_ids)
 
-                #if config.use_position_embeddings:
+                # if config.use_position_embeddings:
                 self.embedding_output = embedding_postprocessor(input_tensor=self.embedding_output,
                                                                 use_token_type=config.use_token_type,
                                                                 token_type_ids=token_type_ids,
@@ -260,10 +265,10 @@ class TextClassify(object):
                 attention_mask = create_attention_mask_from_input_mask(
                     input_ids, input_mask)
 
-
                 # Run the stacked transformer. hidden_size = embedding_size * num_heads
                 # `sequence_output` shape = [batch_size, seq_length, hidden_size].
-                self.embedding_output = tf.tile(self.embedding_output,[1,1,config.num_attention_heads])
+                self.embedding_output = tf.tile(
+                    self.embedding_output, [1, 1, config.num_attention_heads])
                 self.all_encoder_layers = transformer_model(
                     input_tensor=self.embedding_output,
                     attention_mask=attention_mask,
@@ -281,17 +286,18 @@ class TextClassify(object):
 
                 with tf.variable_scope("pooler"):
                     # [batch_size, seq_length, hidden_size]
-                    self.pooled_output = tf.reduce_sum(self.sequence_output,axis=1)  # [batch_size,hidden_size]
+                    self.pooled_output = tf.reduce_sum(
+                        self.sequence_output, axis=1)  # [batch_size,hidden_size]
 
     def get_pooled_output(self):
         return self.pooled_output
 
     def get_sequence_output(self):
         return self.sequence_output
-    
+
     def get_embedding_output(self):
         return self.embedding_output
-    
+
     def get_embedding_table(self):
         return self.embedding_table
 
@@ -594,8 +600,10 @@ def transformer_model(input_tensor,
                         attention_output,
                         hidden_size,
                         kernel_initializer=create_initializer(initializer_range))
-                    attention_output = dropout(attention_output, hidden_dropout_prob)
-                    attention_output = layer_norm(attention_output + layer_input)
+                    attention_output = dropout(
+                        attention_output, hidden_dropout_prob)
+                    attention_output = layer_norm(
+                        attention_output + layer_input)
 
             # The activation is only applied to the "intermediate" hidden layer.
             with tf.variable_scope("intermediate"):
@@ -655,7 +663,8 @@ def embedding_postprocessor(input_tensor,
         # This vocab will be small so we always do one-hot here, since it is always
         # faster for a small vocabulary.
         flat_token_type_ids = tf.reshape(token_type_ids, [-1])
-        one_hot_ids = tf.one_hot(flat_token_type_ids, depth=token_type_vocab_size)
+        one_hot_ids = tf.one_hot(
+            flat_token_type_ids, depth=token_type_vocab_size)
         token_type_embeddings = tf.matmul(one_hot_ids, token_type_table)
         token_type_embeddings = tf.reshape(token_type_embeddings,
                                            [batch_size, seq_length, width])
@@ -713,12 +722,12 @@ def assert_rank(tensor, expected_rank, name=None):
         scope_name = tf.get_variable_scope().name
         raise ValueError(
             "For the tensor `%s` in scope `%s`, the actual rank"
-            "`%d` (shape=%s) is not equal to the expected rank `%s`"%
+            "`%d` (shape=%s) is not equal to the expected rank `%s`" %
             (name, scope_name, actual_rank, str(tensor.shape), str(expected_rank))
         )
 
 
-def get_shape_list(tensor,expected_rank=None,name=None):
+def get_shape_list(tensor, expected_rank=None, name=None):
     if name is None:
         name = tensor.name
     if expected_rank is not None:
@@ -726,7 +735,7 @@ def get_shape_list(tensor,expected_rank=None,name=None):
 
     non_static_indexes = []
     shape = tensor.shape.as_list()
-    for (index,dim) in enumerate(shape):
+    for (index, dim) in enumerate(shape):
         if dim is None:
             non_static_indexes.append(index)
 
@@ -739,3 +748,28 @@ def get_shape_list(tensor,expected_rank=None,name=None):
     return shape
 
 
+def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
+    """Compute the union of the current variables and checkpoint variables."""
+    assignment_map = {}
+    initialized_variable_names = {}
+
+    name_to_variable = collections.OrderedDict()
+    for var in tvars:
+        name = var.name
+        m = re.match("^(.*):\\d+$", name)
+        if m is not None:
+            name = m.group(1)
+        name_to_variable[name] = var
+
+    init_vars = tf.train.list_variables(init_checkpoint)
+
+    assignment_map = collections.OrderedDict()
+    for x in init_vars:
+        (name, var) = (x[0], x[1])
+        if name not in name_to_variable:
+            continue
+        assignment_map[name] = name
+        initialized_variable_names[name] = 1
+        initialized_variable_names[name + ":0"] = 1
+
+    return (assignment_map, initialized_variable_names)
