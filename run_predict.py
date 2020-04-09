@@ -614,22 +614,29 @@ class ModelServer(object):
             params=self.params) 
         tf.logging.info("finish model building")
 
-    def predict(self, text_list, output_predict_file="pred_results.tsv"):
+    def predict(self, text_list, output_predict_file=None):
         input_fn = input_fn_builder(self.processor, self.label_list, self.run_config["max_seq_length"], self.tokenizer, text_list)
         result = self.estimator.predict(input_fn=input_fn, yield_single_examples=True) 
-
-        with tf.gfile.GFile(output_predict_file, "w") as writer:
-            num_written_lines = 0
-            tf.logging.info("***** Predict results *****")
+        if output_predict_file is None:
+            pred_res = []
             for (i, prediction) in enumerate(result):
                 probabilities = prediction["probabilities"]
-                input_ids = prediction["input_ids"]
-                output_line = "\t".join(
-                    str(class_probability)
-                    for class_probability in probabilities) + "\t"
-                words_str = " ".join(self.tokenizer.convert_ids_to_tokens(input_ids)) + "\n"
-                writer.write(output_line + words_str)
-                num_written_lines += 1
+                pred_label = np.argmax(probabilities) + 1
+                pred_res.append(pred_label)
+            return pred_res
+        else:
+            with tf.gfile.GFile(output_predict_file, "w") as writer:
+                num_written_lines = 0
+                tf.logging.info("***** Predict results *****")
+                for (i, prediction) in enumerate(result):
+                    probabilities = prediction["probabilities"]
+                    input_ids = prediction["input_ids"]
+                    output_line = "\t".join(
+                        str(class_probability)
+                        for class_probability in probabilities) + "\t"
+                    words_str = " ".join(self.tokenizer.convert_ids_to_tokens(input_ids)) + "\n"
+                    writer.write(output_line + words_str)
+                    num_written_lines += 1
 
 def load_predict_file(file_name):
     text_list = []
