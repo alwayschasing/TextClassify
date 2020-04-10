@@ -2,13 +2,12 @@
 # -*- encoding:utf-8 -*-
 
 import sys
-sys.path.append('../')
 from multiprocessing import Process, Event, Queue
 import time
 import threading
 import logging
 import uuid
-from run_predict import *
+from predict_util import *
 from helper import set_logger
 
 class Test(Process):
@@ -19,8 +18,15 @@ class Test(Process):
         print("work")
         time.sleep(3)
 
+class DataItem(object):
+    def __init__(self, guid, text_a, text_b=None, label=None):
+        self.guid = uuid
+        self.text_a = text_a
+        self.text_b = text_b
+        self.label = label
 
-class HTTPServer(Process):
+
+class HTTPServer(object):
     def __init__(self, config, ready_to_classify_que, classify_res_que, num_worker=1, logger=logging.getLogger("sver")):
         #super(Process,self).__init__()
         Process.__init__(self)
@@ -54,40 +60,57 @@ class HTTPServer(Process):
         @as_json
         def tts_classify():
             req_data = request.form if request.form else request.json
-            req_data['req_id'] = uuid.uuid1()
-            req_id = req_data['req_id']
+            # req_data['req_id'] = uuid.uuid1()
+            # req_id = req_data['req_id']
             texts = req_data['texts'] # text list
+            if not isinstance(texts, list):
+                texts = [texts]
             req_num = len(texts)
+            text_ids = []
+            for k in req_num:
+                textid = uuid.uuid1()
+                text_a = texts[k]
+                input_item = DataItem(textid,text_a,None,None)
+                text_ids.append(textid)
+
             req_time = time.time()
             req_data['req_time'] = req_time
             self.logger.debug("request %s"%(texts[0]))
             self.ready_to_classify_que.put(req_data)
-            while req_id not in self.classify_res:
-                continue
-            
-            if req_id in self.classify_res:
-                return self.classify_res[req_id]
-            else:
-                return None
 
+            collect_num = 0
+            pred_labels = [0]*req_num
+            for k in req_num:
+                while text_ids[k] not in self.classify_res:
+                    continue
+                pred_labels[k] = self.classify_res[text_ids[k]]
+                self.classify_res.pop(text_ids[k])
+
+            res_data = {
+                "pred_labels":pred_labels
+            }
+            return res_data
         # CORS(app, origins=self.args.cors)
         FlaskJSON(app)
         Compress().init_app(app)
         return app
 
-    def receiver(self):
+    def collect_worker_res(self):
         while True:
             if self.classify_res_que.empty():            
                 continue
             else:
-                data_item = self.classify_res_que.get_nowait()
+                try:
+                    data_item = self.classify_res_que.get_nowait()
+                except:
+                    continue
                 self.logger.debug('put %s res back'%(data_item['req_id']))
                 self.classify_res[data_item['req_id']] = data_item
 
-    def run(self):
+    def start(self):
         # 启动分类结果接收线程
         self.logger.info("start run")
-        receive_thread = threading.Thread(target=self.receiver)
+        receive_thread = threading.Thread(target=self.collect_worker_res)
         receive_thread.start()
 
         self.logger.info("start create app")
@@ -137,20 +160,28 @@ class TtsClassifyWorker(Process):
         self.classify_res_que = classify_res_que
         self.logger.info("finish TtsClassifyWorker:%d init"%(self.id))
 
+    def collect_pred_res(self, pred_generator):
+        for pred_res in pred_generator:
+            pred_label = np.argmax(pred_res["probabilities"]) + 1
+            guid = pred_res["guid"]
+            self.logger.debug("collect %s, pred:%d"%(guid, pred_label)) 
+            data_item = DataItem(guid=guid,text_a=None,text_b=None,label=pred_label)
+            self.classify_res_que.put(data_item)
+
     def run(self):
         self.logger.info("TtsClassifyWorker %d start run"%(self.id))
-        pred_res_iter = self.model_server.predict(self.ready_to_classify_que)
-        while True:
-            data = self.ready_to_classify_que.get()
-            self.logger.debug("get data %s"%(data["req_id"]))
-            texts = data["texts"]
-            st = time.time()
-            tts_labels = self.model_server.predict(texts)
-            data["tts_labels"] = tts_labels
-            ed = time.time()
-            cost = (ed-st)*1000
-            self.logger.debug("get predict res req_id:%s, res:%s, cost:%d ms"%(data["req_id"], str(tts_labels), cost))
-            self.classify_res_que.put(data)
+        pred_res_generator = self.model_server.predict(self.ready_to_classify_que)
+        collect_res_thread = threading.Thread(target=self.collect_pred_res, args=(pred_res_generator))
+        collect_res_thread.start()
+        collect_res_thread.join()
+
+        #while True:
+        #    data_item = self.ready_to_classify_que.get()
+        #    self.logger.debug("get data %s"%(data_item["guid"]))
+        #    # tts_labels = self.model_server.predict(texts)
+        #    # data["tts_labels"] = tts_labels
+        #    self.logger.debug("get predict res req_id:%s, res:%s, cost:%d ms"%(data["req_id"], str(tts_labels), cost))
+        #    # self.classify_res_que.put(data)
 
 
 def main():
@@ -171,9 +202,6 @@ def main():
     http_server = HTTPServer(config, ready_to_classify_que, classify_res_que, 1, logger)
     logger.info("start server")
     http_server.start()
-
-    logger.info("finish all start")
-    #http_server.join()
 
 
 if __name__ == "__main__":
