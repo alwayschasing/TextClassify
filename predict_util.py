@@ -10,7 +10,9 @@ import tokenization
 import optimization
 import logging
 import time
+import zmq
 
+__all__=['TtsProcessor', 'InputExample','InputFeatures','convert_single_example','load_embedding_table','model_fn_builder']
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -380,27 +382,25 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         features.append(feat)
     return features
 
-def input_fn_builder(processor, label_list, max_seq_length, tokenizer, receive_que):
+def input_fn_builder(processor, label_list, max_seq_length, tokenizer, socks, logger):
 
     #data_examples = processor.get_predict_examples(text_list)
     #features = convert_examples_to_features(data_examples, label_list, max_seq_length, tokenizer)
     def generate_fn():
-        input_item = receive_que.get()
-        #data_examples = processor.get_predict_examples([input_item])
-        data_example = InputExample(guid=input_item['guid'],text_a=input_item['text_a'])
-        feature = convert_single_example(data_example,label_list,max_seq_length,tokenizer)
-        # features = convert_examples_to_features(data_examples, label_list, max_seq_length, tokenizer)
-        # for feat in features:
-        #    """
-        #    feat : {
-        #        "input_ids":[],
-        #        "input_mask":[],
-        #        "segment_ids":[],
-        #        "label_ids":[]
-        #    }
-        #    """
-        #    yield feat
-        yield feature
+        logger.debug("tf generate fn")
+        # input_item = receive_que.get()
+        poller  = zmq.Poller()
+        for sock in socks:
+            poller.register(sock, zmq.POLLIN)
+        logger.info('ready and listening')
+        while True:
+            events = dict(poller.poll())
+            for sock_idx, sock in enumerate(socks):
+                if sock in events:
+                    guid,text_a,text_b = sock.recv_multipart()
+                    data_example = InputExample(guid=guid,text_a=text_a,text_b=text_b)
+                    feature = convert_single_example(data_example,label_list,max_seq_length,tokenizer)
+                    yield feature
 
     def input_fn(params):
         max_seq_length = params["max_seq_length"]
@@ -470,8 +470,8 @@ class ModelServer(object):
             params=self.params) 
         tf.logging.info("finish model building")
 
-    def predict(self, receive_que, output_predict_file=None):
-        input_fn = input_fn_builder(self.processor, self.label_list, self.run_config["max_seq_length"], self.tokenizer, receive_que)
+    def predict(self, receiver, output_predict_file=None):
+        input_fn = input_fn_builder(self.processor, self.label_list, self.run_config["max_seq_length"], self.tokenizer, receiver, self.logger)
         self.logger.debug("prepare input_fn, start predict")
         result = self.estimator.predict(input_fn=input_fn, yield_single_examples=True) 
         if output_predict_file is None:
