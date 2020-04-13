@@ -22,9 +22,9 @@ dev_data=$DATA_DIR/train_data/annotate_data_dev
 
 python run_textclassify.py \
   --task_name=tts \
-  --do_train=true \
+  --do_train=false \
   --do_eval=false \
-  --do_predict=false \
+  --do_predict=true \
   --train_data=$train_data \
   --eval_data=$dev_data \
   --pred_data=$test_data \
@@ -34,5 +34,5 @@ python run_textclassify.py \
   --max_seq_length=128 \
   --train_batch_size=32 \
   --learning_rate=2e-5 \
-  --num_train_epochs=10 \
+  --num_train_epochs=15 \
   --output_dir=$output_dir

@@ -86,6 +86,7 @@ class HTTPServer(object):
                 texts = [texts]
             req_num = len(texts)
             text_ids = []
+            st = int(time.time() * 1000)
             for k in range(req_num):
                 textid = uuid.uuid1().hex
                 text_a = texts[k]
@@ -117,6 +118,9 @@ class HTTPServer(object):
             res_data = {
                 "pred_labels":pred_labels
             }
+            ed = int(time.time()*1000)
+            cost = ed - st
+            self.logger.debug("[timecost] %d ms"%(cost))
             return res_data
         # CORS(app, origins=self.args.cors)
         FlaskJSON(app)
@@ -342,7 +346,7 @@ def main():
     logger = set_logger("root", verbose=True, handler=logging.StreamHandler())
     ready_to_classify_que = Queue() 
     classify_res_que = Queue()
-    http_server = HTTPServer(config, ready_to_classify_que, classify_res_que, 2, 5664,5665, logger)
+    http_server = HTTPServer(config, ready_to_classify_que, classify_res_que, 1, 5664,5665, logger)
     logger.info("start server")
     http_server.start()
 
